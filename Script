@@ -1,0 +1,95 @@
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import time
+import csv
+
+from selenium.webdriver.chrome.options import Options
+options = Options()
+options.add_argument(
+    "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
+options.add_experimental_option("excludeSwitches", ["enable-automation"])
+options.add_experimental_option('useAutomationExtension', False)
+
+driver = webdriver.Chrome(options=options)
+wait = WebDriverWait(driver, 20)
+
+try:
+    driver.get("https://www.bestbuy.com/site/store-locator")
+    time.sleep(7)
+    driver.refresh()
+    time.sleep(7)
+
+    zip_input = wait.until(EC.element_to_be_clickable((By.CLASS_NAME, "zip-code-input")))
+    zip_input.clear()
+    zip_input.send_keys("10001")
+    time.sleep(7)
+
+    update_button = wait.until(EC.element_to_be_clickable((By.CLASS_NAME, "location-zip-code-form-update-btn")))
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", update_button)
+    time.sleep(1)
+    update_button.click()
+    time.sleep(7)
+
+    results_container = wait.until(
+        EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/main/div/div/div[1]/div[3]/div"))
+    )
+    time.sleep(7)
+
+    store_lis = results_container.find_elements(By.CSS_SELECTOR, "ul.location-card-list-container > li.store")
+    store_results = []
+    for s in store_lis:
+        store = {}
+        # Store name
+        try:
+            store['name'] = s.find_element(By.CSS_SELECTOR, 'button[data-cy="store-heading"]').text
+        except:
+            store['name'] = ""
+        # Distance
+        try:
+            store['distance'] = s.find_element(By.CSS_SELECTOR, '[data-cy="LocationDistance"]').text
+        except:
+            store['distance'] = ""
+        # Address components
+        try:
+            addr_component = s.find_element(By.CSS_SELECTOR, '[data-cy="AddressComponent"]')
+            addr1 = addr_component.find_element(By.XPATH, "./span[1]").text
+        except:
+            addr1 = ""
+        try:
+            addr2 = addr_component.find_element(By.CSS_SELECTOR, 'span[data-testid="addr2"]').text
+        except:
+            addr2 = ""
+        try:
+            citystatezip = addr_component.find_element(By.CSS_SELECTOR, 'span[data-testid="extendedAddress"]').text
+        except:
+            citystatezip = ""
+        # Concatenate address with commas (and only include non-empty parts)
+        address = ', '.join(x for x in [addr1, addr2, citystatezip] if x.strip())
+        store['address'] = address
+        # Details link
+        try:
+            store['details_url'] = s.find_element(By.CSS_SELECTOR, 'a.details[data-cy="DetailsComponent"]').get_attribute("href")
+        except:
+            store['details_url'] = ""
+        # Hours
+        try:
+            store['hours'] = s.find_element(By.CSS_SELECTOR, 'span[data-cy="BusinessHoursComponent"]').text
+        except:
+            store['hours'] = ""
+        store_results.append(store)
+    
+    # Save to CSV with single address column
+    csv_filename = "bestbuy_store_results.csv"
+    fieldnames = ['name', 'distance', 'address', 'details_url', 'hours']
+    with open(csv_filename, mode='w', newline='', encoding='utf-8') as outfile:
+        writer = csv.DictWriter(outfile, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in store_results:
+            writer.writerow(row)
+    print(f"Saved {len(store_results)} results to {csv_filename}")
+
+finally:
+    driver.quit()
